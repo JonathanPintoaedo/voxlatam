@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+voxlatam-env/
+node_modules/
+data/
+storage/
+models/
+nginx/certs/
+nginx/logs/
+*.whl
+.DS_Store

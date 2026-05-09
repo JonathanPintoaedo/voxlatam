@@ -1,0 +1,128 @@
+version: '3.8'
+services:
+  # ── PostgreSQL ─────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: voxlatam
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASS}
+    volumes:
+      - ./data/redis:/data
+
+  # ── Ollama (Mistral para traducción) ───────────────
+  ollama:
+    image: ollama/ollama:latest
+    restart: always
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      - ./models/ollama:/root/.ollama
+    expose:
+      - "11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ── FastAPI Backend ────────────────────────────────
+  api:
+    build: ./backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASS}@postgres/voxlatam
+      REDIS_URL: redis://:${REDIS_PASS}@redis:6379/0
+      SECRET_KEY: ${SECRET_KEY}
+      STORAGE_PATH: /storage
+      API_KEY_TELEGRAM: ${TELEGRAM_BOT_TOKEN}
+    volumes:
+      - ./storage:/storage
+    expose:
+      - "8000"
+
+  # ── Celery AI Worker (GPU) ─────────────────────────
+  worker:
+    build: ./worker
+    restart: always
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      REDIS_URL: redis://:${REDIS_PASS}@redis:6379/0
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASS}@postgres/voxlatam
+      STORAGE_PATH: /storage
+      WHISPER_MODEL: large-v3
+      OLLAMA_URL: http://ollama:11434
+      COQUI_TOS_AGREED: "1"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    volumes:
+      - ./storage:/storage
+      - ./models:/models
+    depends_on:
+      - redis
+      - postgres
+      - ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ── Telegram Bot ───────────────────────────────────
+  telegram-bot:
+    build: ./telegram-bot
+    restart: always
+    environment:
+      BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      API_URL: http://api:8000
+      REDIS_URL: redis://:${REDIS_PASS}@redis:6379/0
+    depends_on:
+      - api
+
+  # ── React Frontend (deshabilitado) ─────────────────
+  # frontend:
+  #   build: ./frontend
+  #   restart: always
+  #   expose:
+  #     - "3000"
+
+  # ── Nginx Reverse Proxy (deshabilitado) ────────────
+  # nginx:
+  #   image: nginx:alpine
+  #   restart: always
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx/conf.d:/etc/nginx/conf.d
+  #     - ./nginx/certs:/etc/nginx/certs
+  #     - ./nginx/logs:/var/log/nginx
+  #   depends_on:
+  #     - api
+  #     - frontend
