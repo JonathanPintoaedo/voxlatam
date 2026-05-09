@@ -7,7 +7,14 @@ async_url = settings.database_url.replace(
     "postgresql://", "postgresql+asyncpg://"
 )
 
-engine = create_async_engine(async_url, echo=False)
+engine = create_async_engine(
+    async_url,
+    echo=False,
+    pool_pre_ping=True,       # Reconecta si la conexión está caída
+    pool_recycle=300,         # Recicla conexiones cada 5 minutos
+    pool_size=5,
+    max_overflow=10,
+)
 
 AsyncSessionLocal = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
