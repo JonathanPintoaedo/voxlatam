@@ -38,7 +38,7 @@ async def create_job(
 
     # Crear job
     job_id = str(uuid.uuid4())
-    job_dir = Path(settings.storage_path) / job_id
+    job_dir = Path(settings.storage_path) / job_id 
     job_dir.mkdir(parents=True, exist_ok=True)
 
     # Guardar archivo subido
